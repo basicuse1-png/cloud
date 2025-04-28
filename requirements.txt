@@ -1,3 +1,6 @@
 Flask
 gunicorn
 gradio
+torch
+transformers
+sentencepiece
