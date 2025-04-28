@@ -1,32 +1,47 @@
 import os
-import subprocess
 import threading
+import subprocess
+import gradio as gr
+import torch
+from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
 from flask import Flask
 
+# Flask app
 app = Flask(__name__)
 
-REPO_URL = "https://github.com/nari-labs/dia.git"
-REPO_DIR = "dia"
-
-# Clone the Dia repository if it doesn't exist
-if not os.path.exists(REPO_DIR):
-    subprocess.run(["git", "clone", REPO_URL])
-
-# Install the Dia package
-subprocess.run(["pip", "install", "-e", "."], cwd=REPO_DIR)
-
-# Function to start the Dia TTS server
-def start_dia_server():
-    subprocess.run(["python", "app.py"], cwd=REPO_DIR)
-
-# Start the Dia server in a separate thread
-threading.Thread(target=start_dia_server).start()
-
-# Flask route to keep the server alive
 @app.route('/')
 def home():
-    return "Nari Labs Dia TTS server is running!"
+    return "DIA TTS Server Running"
 
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 10000))
-    app.run(host='0.0.0.0', port=port)
+def run_flask():
+    port = int(os.environ.get('PORT', 7860))
+    app.run(host="0.0.0.0", port=port)
+
+def run_dia():
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
+    model_id = "nari-labs/dia"
+    processor = AutoProcessor.from_pretrained(model_id)
+    model = AutoModelForSpeechSeq2Seq.from_pretrained(
+        model_id,
+        torch_dtype=torch_dtype,
+        low_cpu_mem_usage=True,
+        use_safetensors=True
+    )
+    model.to(device)
+    pipe = pipeline(
+        "text-to-speech",
+        model=model,
+        tokenizer=processor.tokenizer,
+        feature_extractor=processor.feature_extractor,
+        device=device
+    )
+    def tts(text):
+        speech = pipe(text)
+        return (speech["sampling_rate"], speech["audio"])
+    demo = gr.Interface(fn=tts, inputs="text", outputs="audio")
+    demo.launch(server_name="0.0.0.0", server_port=7861, share=False)
+
+if __name__ == "__main__":
+    threading.Thread(target=run_dia).start()
+    run_flask()
